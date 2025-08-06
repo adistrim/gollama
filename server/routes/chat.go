@@ -1,17 +1,20 @@
 package routes
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"net/http"
 
 	"gollama/llm"
+	"gollama/chat"
+	"gollama/socket"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sashabaranov/go-openai"
 )
 
-type ChatPayload struct {
-	Message string `json:"message" binding:"required"`
-}
+var sessionManager = chat.NewSessionManager()
 
 const (
 	// MODEL = "qwen2.5-coder:7b"
@@ -19,26 +22,70 @@ const (
 	MODEL = "gpt-oss:20b"
 )
 
-func ChatHandler(c *gin.Context) {
-	var payload ChatPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload. 'message' field is required."})
-		return
-	}
+func generateSessionID() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
 
-	agent, err := llm.GetAgent(MODEL)
+func WebSocketHandler(c *gin.Context) {
+	conn, err := socket.NewConnection(c)
 	if err != nil {
-		log.Printf("Error creating agent: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize LLM agent."})
+		log.Printf("WebSocket upgrade failed: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to upgrade to WebSocket"})
 		return
 	}
 
-	response, err := agent.RunConversation(c.Request.Context(), payload.Message)
-	if err != nil {
-		log.Printf("Error during conversation: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "An error occurred while processing your request."})
-		return
-	}
+	go conn.WritePump()
 
-	c.JSON(http.StatusOK, gin.H{"response": response})
+	conn.SendMessage(socket.Message{
+		Response: "Connected to Gollama! Send a message to start chatting.",
+	})
+
+	conn.ReadPump(func(conn *socket.Connection, msg socket.Message) {
+		sessionID := msg.SessionID
+		if sessionID == "" {
+			sessionID = generateSessionID()
+		}
+
+		chatSession := sessionManager.GetOrCreateSession(sessionID)
+
+		userMessage := openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: msg.Content,
+		}
+		chatSession.AddMessage(userMessage)
+
+		agent, err := llm.GetAgent(MODEL)
+		if err != nil {
+			log.Printf("Error creating agent: %v", err)
+			conn.SendMessage(socket.Message{
+				Error: "Failed to initialize LLM agent",
+			})
+			return
+		}
+
+		updatedMessages, err := agent.RunSessionConversation(conn.Context(), chatSession.GetMessages())
+		if err != nil {
+			log.Printf("Error during conversation: %v", err)
+			conn.SendMessage(socket.Message{
+				Error: "An error occurred while processing your request",
+			})
+			return
+		}
+
+		for _, message := range updatedMessages[len(chatSession.GetMessages()):] {
+			chatSession.AddMessage(message)
+		}
+
+		if len(updatedMessages) > 0 {
+			lastMessage := updatedMessages[len(updatedMessages)-1]
+			if lastMessage.Role == openai.ChatMessageRoleAssistant {
+				conn.SendMessage(socket.Message{
+					Response:  lastMessage.Content,
+					SessionID: sessionID,
+				})
+			}
+		}
+	})
 }
