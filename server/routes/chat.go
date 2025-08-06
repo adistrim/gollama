@@ -15,7 +15,8 @@ type ChatPayload struct {
 
 const (
 	// MODEL = "qwen2.5-coder:7b"
-	MODEL = "llama3.1:8b"
+	// MODEL = "llama3.1:8b"
+	MODEL = "gpt-oss:20b"
 )
 
 func ChatHandler(c *gin.Context) {

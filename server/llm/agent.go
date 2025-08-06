@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 
-	system "gollama/config"
 	"gollama/tools"
 
 	"github.com/sashabaranov/go-openai"
@@ -18,48 +16,16 @@ type Agent struct {
 	model  string
 }
 
-var (
-	instance *Agent
-	once     sync.Once
-	mu       sync.Mutex
+const (
+	systemPrompt = `
+	You are Gollama, an expert AI Software Engineer.
+	You always communicate in casual human tone.
+	
+	IMPORTANT: Only use tools when the user explicitly provides ALL required information:
+	- Do NOT use tools for general questions, introductions, or when missing required parameters
+	- If the user asks general questions about your capabilities, respond directly without using any tools
+	`
 )
-
-func GetAgent(modelName string) (*Agent, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	
-	var initErr error
-	once.Do(func() {
-		// token is not needed for local Ollama, but required in openai library
-		config := openai.DefaultConfig("") 
-		config.BaseURL = system.ENV.BaseURL
-
-		client := openai.NewClientWithConfig(config)
-
-		_, err := client.ListModels(context.Background())
-		if err != nil {
-			log.Printf("Could not connect to Ollama at %s. Is it running?", config.BaseURL)
-			initErr = fmt.Errorf("failed to connect to ollama: %w", err)
-			return
-		}
-		log.Println("Successfully connected to Ollama.")
-
-		instance = &Agent{
-			client: client,
-			model:  modelName,
-		}
-	})
-	
-	if initErr != nil {
-		return nil, initErr
-	}
-	
-	if instance.model != modelName {
-		instance.model = modelName
-	}
-	
-	return instance, nil
-}
 
 func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, error) {
 	availableTools := tools.GetAvailableTools()
@@ -71,7 +37,7 @@ func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, 
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role: openai.ChatMessageRoleSystem,
-			Content: "Your name is Gollama, you help with tasks related to GitHub and provide information about GitHub and its features. If a question is completely unrelated to GitHub, say 'I'm sorry, I can't help with that.' Always respond in plain text - no markdown.",
+			Content: systemPrompt,
 		},
 		{
 			Role: openai.ChatMessageRoleUser,
@@ -113,7 +79,7 @@ func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, 
 		}
 
 		log.Printf("Executing tool '%s' with args: %s", functionName, toolCall.Function.Arguments)
-		toolResult, err := tool.Execute(toolCall.Function.Arguments)
+		toolResult, err := tool.Execute(ctx, toolCall.Function.Arguments)
 		if err != nil {
 			return "", fmt.Errorf("failed to execute tool %s: %w", functionName, err)
 		}
