@@ -15,26 +15,26 @@ func getGitHubIssueDetailsTool() Tool {
 		Definition: openai.Tool{
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
-				Name:        "get_github_issue_details",
-				Description: "Get detailed information about a specific issue from a GitHub repository.",
-				Parameters: map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"owner": map[string]any{
-							"type":        "string",
-							"description": "The owner or organization of the repository.",
-						},
-						"repo": map[string]any{
-							"type":        "string",
-							"description": "The name of the repository.",
-						},
-						"issue_number": map[string]any{
-							"type":        "integer",
-							"description": "The number of the issue to retrieve.",
-						},
-					},
-					"required": []string{"owner", "repo", "issue_number"},
-				},
+			    Name: "get_github_issue_details",
+			    Description: "Retrieve detailed information about a specific issue.",
+			    Parameters: map[string]any{
+			        "type": "object",
+			        "properties": map[string]any{
+			            "owner": map[string]any{
+			                "type": "string",
+			                "description": "The owner or organization of the repository.",
+			            },
+			            "repo": map[string]any{
+			                "type": "string",
+			                "description": "The name of the repository.",
+			            },
+			            "issue_number": map[string]any{
+			                "type": "integer",
+			                "description": "The number of the issue to retrieve.",
+			            },
+			        },
+			        "required": []string{"owner", "repo", "issue_number"},
+			    },
 			},
 		},
 		Execute: func(ctx context.Context, args string) (string, error) {
