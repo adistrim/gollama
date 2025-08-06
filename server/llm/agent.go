@@ -68,7 +68,7 @@ func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, 
 		}
 
 		log.Printf("Executing tool '%s' with args: %s", functionName, toolCall.Function.Arguments)
-		toolResult, err := tool.Execute(toolCall.Function.Arguments)
+		toolResult, err := tool.Execute(ctx, toolCall.Function.Arguments)
 		if err != nil {
 			return "", fmt.Errorf("failed to execute tool %s: %w", functionName, err)
 		}
