@@ -10,8 +10,8 @@ func Master() *gin.Engine {
 	// system endpoints
 	router.GET("/health", HealthCheck)
 
-	// application endpoints
-	router.POST("/chat", ChatHandler)
+	// websocket endpoint
+	router.GET("/chat", WebSocketHandler)
 
 	return router
 }
