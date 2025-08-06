@@ -39,7 +39,7 @@ func WebSocketHandler(c *gin.Context) {
 	go conn.WritePump()
 
 	conn.SendMessage(socket.Message{
-		Response: "Connected to Gollama! Send a message to start chatting.",
+		Response: "Hey! How can I assist you today?",
 	})
 
 	conn.ReadPump(func(conn *socket.Connection, msg socket.Message) {
