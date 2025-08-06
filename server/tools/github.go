@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"gollama/config"
-	"strconv"
 
 	"github.com/google/go-github/v74/github"
 	"github.com/sashabaranov/go-openai"
@@ -53,7 +52,7 @@ func getGitHubIssueDetailsTool() Tool {
 			type issueArgs struct {
 				Owner       string `json:"owner"`
 				Repo        string `json:"repo"`
-				IssueNumber string `json:"issue_number"`
+				IssueNumber json.Number `json:"issue_number"`
 			}
 
 			var parsedArgs issueArgs
@@ -61,19 +60,19 @@ func getGitHubIssueDetailsTool() Tool {
 			if err != nil {
 				return "", fmt.Errorf("failed to parse tool arguments: %w", err)
 			}
-			
-			issueNum, err := strconv.Atoi(parsedArgs.IssueNumber)
+
+			issueNum, err := parsedArgs.IssueNumber.Int64()
 			if err != nil {
 				return "", fmt.Errorf("failed to parse issue number: %w", err)
 			}
-
+			
 			client := github.NewClient(nil).WithAuthToken(config.ENV.GithubToken)
-
+			
 			issue, _, err := client.Issues.Get(
 				context.Background(),
 				parsedArgs.Owner,
 				parsedArgs.Repo,
-				issueNum,
+				int(issueNum),
 			)
 			if err != nil {
 				return "", fmt.Errorf("failed to get issue from GitHub API: %w", err)
