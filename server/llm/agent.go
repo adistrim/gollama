@@ -16,6 +16,17 @@ type Agent struct {
 	model  string
 }
 
+const (
+	systemPrompt = `
+	You are Gollama, an expert AI Software Engineer.
+	You always communicate in casual human tone.
+	
+	IMPORTANT: Only use tools when the user explicitly provides ALL required information:
+	- Do NOT use tools for general questions, introductions, or when missing required parameters
+	- If the user asks general questions about your capabilities, respond directly without using any tools
+	`
+)
+
 func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, error) {
 	availableTools := tools.GetAvailableTools()
 	var toolDefs []openai.Tool
@@ -26,7 +37,7 @@ func (a *Agent) RunConversation(ctx context.Context, userInput string) (string, 
 	messages := []openai.ChatCompletionMessage{
 		{
 			Role: openai.ChatMessageRoleSystem,
-			Content: "Your name is Gollama, you help with tasks related to GitHub and provide information about GitHub and its features. If a question is completely unrelated to GitHub, say 'I'm sorry, I can't help with that.' Always respond in plain text - no markdown.",
+			Content: systemPrompt,
 		},
 		{
 			Role: openai.ChatMessageRoleUser,
