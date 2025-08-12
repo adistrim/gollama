@@ -12,7 +12,11 @@ type Tool struct {
 }
 
 func GetAvailableTools() map[string]Tool {
-	tools := make(map[string]Tool)
-	tools["get_github_issue_details"] = getGitHubIssueDetailsTool()
-	return tools
+    tools := make(map[string]Tool)
+    tools["get_github_issue_details"] = getGitHubIssueDetailsTool()
+    tools["create_github_pr"] = createGitHubPRTool()
+    tools["create_github_branch"] = createGitHubBranchTool()
+    tools["get_repository_files"] = getRepositoryFilesTool()
+    tools["update_github_file"] = updateGitHubFileTool()
+    return tools
 }
