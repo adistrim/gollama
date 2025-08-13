@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"log"
 	"net/http"
+	mathRand "math/rand"
 
 	"gollama/llm"
 	"gollama/chat"
@@ -60,16 +61,39 @@ func WebSocketHandler(c *gin.Context) {
 		if err != nil {
 			log.Printf("Error creating agent: %v", err)
 			conn.SendMessage(socket.Message{
-				Error: "Failed to initialize LLM agent",
+				Error:     "Failed to initialize LLM agent",
+				SessionID: sessionID,
 			})
 			return
 		}
 
-		updatedMessages, err := agent.RunSessionConversation(conn.Context(), chatSession.GetMessages())
+		toolsUsed := false
+		
+		statusCallback := func(status string) {
+			if !toolsUsed && status == "tools_used" {
+				toolsUsed = true
+				messages := []string{
+					"Working on it… apparently this takes more than two seconds.",
+					"Processing… you'll know when I finally survive this step.",
+					"Processing… I'll update you shortly.",
+					"Working through the steps… hang tight.",
+					"The tools and I are having a deep conversation.",
+				}
+				msgText := messages[mathRand.Intn(len(messages))]
+				conn.SendMessage(socket.Message{
+					Response:     msgText,
+					SessionID:    sessionID,
+					IsProcessing: true,
+				})
+			}
+		}
+
+		updatedMessages, err := agent.RunSessionConversation(conn.Context(), chatSession.GetMessages(), statusCallback)
 		if err != nil {
 			log.Printf("Error during conversation: %v", err)
 			conn.SendMessage(socket.Message{
-				Error: "An error occurred while processing your request",
+				Error:     "An error occurred while processing your request",
+				SessionID: sessionID,
 			})
 			return
 		}
@@ -78,14 +102,26 @@ func WebSocketHandler(c *gin.Context) {
 			chatSession.AddMessage(message)
 		}
 
-		if len(updatedMessages) > 0 {
-			lastMessage := updatedMessages[len(updatedMessages)-1]
-			if lastMessage.Role == openai.ChatMessageRoleAssistant {
-				conn.SendMessage(socket.Message{
-					Response:  lastMessage.Content,
-					SessionID: sessionID,
-				})
+		var lastAssistantMessage string
+		for i := len(updatedMessages) - 1; i >= 0; i-- {
+			if updatedMessages[i].Role == openai.ChatMessageRoleAssistant {
+				lastAssistantMessage = updatedMessages[i].Content
+				break
 			}
+		}
+
+		if lastAssistantMessage != "" {
+			conn.SendMessage(socket.Message{
+				Response:     lastAssistantMessage,
+				SessionID:    sessionID,
+				IsProcessing: false,
+			})
+		} else {
+			conn.SendMessage(socket.Message{
+				Response:     "I've completed all requested operations. Check the repository for the changes.",
+				SessionID:    sessionID,
+				IsProcessing: false,
+			})
 		}
 	})
 }

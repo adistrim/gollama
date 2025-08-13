@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { useWebSocket } from '@/lib/websocket';
 import { MarkdownRenderer } from '@/components/markdown-renderer';
@@ -11,6 +11,12 @@ export default function ChatPage() {
   const { messages, sendMessage, connected } = useWebSocket();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  const processingMessage = useMemo(() => {
+    // Only consider messages from the current conversation as "processing"
+    const processingMessages = messages.filter(m => m.isProcessing);
+    return processingMessages.length > 0 ? processingMessages[processingMessages.length - 1] : null;
+  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,12 +49,6 @@ export default function ChatPage() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
   };
 
-  const isBotThinking = () => {
-    if (messages.length === 0) return false;
-    const lastMessage = messages[messages.length - 1];
-    return !!lastMessage.content && !lastMessage.response && !lastMessage.error;
-  };
-
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Main content area */}
@@ -69,45 +69,55 @@ export default function ChatPage() {
         {messages.length > 0 && (
           <ScrollArea className="h-full pb-32">
             <div className="max-w-2xl mx-auto py-8 px-4">
-              {messages.map((message, index) => (
-                <div 
-                  key={index} 
-                  className="mb-6"
-                >
-                  {message.content ? (
-                    /* User message - right aligned with background */
-                    <div className="flex justify-end">
-                      <div className="bg-primary text-primary-foreground px-4 py-3 rounded-xl max-w-[80%]">
-                        <div className="whitespace-pre-wrap">{message.content}</div>
+              {messages.map((message, index) => {
+                if (message.isProcessing) return null;
+                return (
+                  <div
+                    key={index}
+                    className="mb-6"
+                  >
+                    {message.content ? (
+                      /* User message - right aligned with background */
+                      <div className="flex justify-end">
+                        <div className="bg-primary text-primary-foreground px-4 py-3 rounded-xl max-w-[80%]">
+                          <div className="whitespace-pre-wrap">{message.content}</div>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    /* AI message - left aligned */
-                    <div className="flex">
-                      <div className="max-w-[80%]">
-                        {message.response ? (
-                          <MarkdownRenderer content={message.response} />
-                        ) : (
-                          <div className="text-destructive">{message.error || "An error occurred"}</div>
-                        )}
+                    ) : (
+                      /* AI message - left aligned */
+                      <div className="flex">
+                        <div className="max-w-[80%]">
+                          {message.response ? (
+                            <MarkdownRenderer content={message.response} />
+                          ) : (
+                            <div className="text-destructive">{message.error || "An error occurred"}</div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                );
+              })}
               
-              {/* Bot typing indicator */}
-              {isBotThinking() && (
+              {processingMessage && (
                 <div className="flex mb-6">
-                  <div className="max-w-[80%]">
-                    <div className="text-muted-foreground flex items-center gap-2 px-4 py-3">
-                      <div className="size-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin"></div>
-                      <span className="text-sm">Thinking...</span>
+                  <div className="max-w-[80%] bg-muted/20 rounded-lg p-4">
+                    <div className="flex flex-col gap-3">
+                      {processingMessage.response && (
+                        <MarkdownRenderer content={processingMessage.response} />
+                      )}
+                      
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          <div className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.3s]"></div>
+                          <div className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.15s]"></div>
+                          <div className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce"></div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              )}
-                            
+              )}            
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
