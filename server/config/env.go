@@ -11,6 +11,7 @@ type Config struct {
 	Port string
 	BaseURL string
 	GithubToken string
+	DatabaseURL string
 }
 
 var ENV *Config
@@ -44,10 +45,16 @@ func Load() (*Config, error) {
 		log.Println("No GITHUB_TOKEN environment variable found")
 	}
 	
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Println("No DATABASE_URL environment variable found")
+	}
+	
 	return &Config{
 		Port: port,
 		BaseURL: baseURL,
 		GithubToken: githubToken,
+		DatabaseURL: databaseURL,
 	}, nil
 }
 
