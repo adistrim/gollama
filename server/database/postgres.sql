@@ -1,3 +1,5 @@
+CREATE DATABASE gollama;
+
 CREATE TABLE chat_sessions (
     id UUID PRIMARY KEY,
     user_id UUID,
