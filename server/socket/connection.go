@@ -29,6 +29,7 @@ type Message struct {
 	SessionID string `json:"session_id,omitempty"`
 	Response  string `json:"response,omitempty"`
 	Error     string `json:"error,omitempty"`
+	IsProcessing  bool   `json:"is_processing,omitempty"`
 }
 
 func NewConnection(c *gin.Context) (*Connection, error) {
