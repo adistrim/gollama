@@ -1,127 +1,126 @@
 package routes
 
 import (
-	"crypto/rand"
-	"encoding/hex"
-	"log"
-	"net/http"
-	mathRand "math/rand"
+    "crypto/rand"
+    "encoding/hex"
+    "io"
+    "log"
+    "math/rand"
+    "net/http"
+    "time"
 
-	"gollama/llm"
-	"gollama/chat"
-	"gollama/socket"
+    "gollama/llm"
+    "gollama/chat"
 
-	"github.com/gin-gonic/gin"
-	"github.com/sashabaranov/go-openai"
+    "github.com/gin-gonic/gin"
+    "github.com/sashabaranov/go-openai"
 )
 
 var sessionManager = chat.NewSessionManager()
 
 const (
-	// MODEL = "qwen2.5-coder:7b"
-	// MODEL = "llama3.1:8b"
-	MODEL = "gpt-oss:20b"
+    // MODEL = "qwen2.5-coder:7b"
+    // MODEL = "llama3.1:8b"
+    MODEL = "gpt-oss:20b"
 )
 
 func generateSessionID() string {
-	bytes := make([]byte, 16)
-	rand.Read(bytes)
-	return hex.EncodeToString(bytes)
+    bytes := make([]byte, 16)
+    rand.Read(bytes)
+    return hex.EncodeToString(bytes)
 }
 
-func WebSocketHandler(c *gin.Context) {
-	conn, err := socket.NewConnection(c)
-	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to upgrade to WebSocket"})
-		return
-	}
+// ChatRequest is the payload for the new HTTP chat endpoint.
+type ChatRequest struct {
+    SessionID string `json:"session_id"`
+    Content   string `json:"content"`
+}
 
-	go conn.WritePump()
+func HTTPChatHandler(c *gin.Context) {
+    var req ChatRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+        return
+    }
 
-	conn.SendMessage(socket.Message{
-		Response: "Hey! How can I assist you today?",
-	})
+    sessionID := req.SessionID
+    if sessionID == "" {
+        sessionID = generateSessionID()
+    }
 
-	conn.ReadPump(func(conn *socket.Connection, msg socket.Message) {
-		sessionID := msg.SessionID
-		if sessionID == "" {
-			sessionID = generateSessionID()
-		}
+    chatSession := sessionManager.GetOrCreateSession(sessionID)
 
-		chatSession := sessionManager.GetOrCreateSession(sessionID)
+    userMessage := openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: req.Content}
+    chatSession.AddMessage(userMessage)
 
-		userMessage := openai.ChatCompletionMessage{
-			Role:    openai.ChatMessageRoleUser,
-			Content: msg.Content,
-		}
-		chatSession.AddMessage(userMessage)
+    agent, err := llm.GetAgent(MODEL)
+    if err != nil {
+        log.Printf("Error creating agent: %v", err)
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to initialize LLM agent"})
+        return
+    }
 
-		agent, err := llm.GetAgent(MODEL)
-		if err != nil {
-			log.Printf("Error creating agent: %v", err)
-			conn.SendMessage(socket.Message{
-				Error:     "Failed to initialize LLM agent",
-				SessionID: sessionID,
-			})
-			return
-		}
+    // Set headers for SSE
+    c.Writer.Header().Set("Content-Type", "text/event-stream")
+    c.Writer.Header().Set("Cache-Control", "no-cache")
+    c.Writer.Header().Set("Connection", "keep-alive")
+    c.Writer.WriteHeader(http.StatusOK)
 
-		toolsUsed := false
-		
-		statusCallback := func(status string) {
-			if !toolsUsed && status == "tools_used" {
-				toolsUsed = true
-				messages := []string{
-					"Working on it… apparently this takes more than two seconds.",
-					"Processing… you'll know when I finally survive this step.",
-					"Processing… I'll update you shortly.",
-					"Working through the steps… hang tight.",
-					"The tools and I are having a deep conversation.",
-				}
-				msgText := messages[mathRand.Intn(len(messages))]
-				conn.SendMessage(socket.Message{
-					Response:     msgText,
-					SessionID:    sessionID,
-					IsProcessing: true,
-				})
-			}
-		}
+    // Helper to send SSE messages
+    sendEvent := func(event, data string) error {
+        if _, err := c.Writer.Write([]byte("event:" + event + "\ndata:" + data + "\n\n")); err != nil {
+            return err
+        }
+        if flusher, ok := c.Writer.(http.Flusher); ok {
+            flusher.Flush()
+        }
+        return nil
+    }
 
-		updatedMessages, err := agent.RunSessionConversation(conn.Context(), chatSession.GetMessages(), statusCallback)
-		if err != nil {
-			log.Printf("Error during conversation: %v", err)
-			conn.SendMessage(socket.Message{
-				Error:     "An error occurred while processing your request",
-				SessionID: sessionID,
-			})
-			return
-		}
+    // send initial ack
+    sendEvent("info", "Chat session started")
 
-		for _, message := range updatedMessages[len(chatSession.GetMessages()):] {
-			chatSession.AddMessage(message)
-		}
+    toolsUsed := false
+    statusCallback := func(status string) {
+        if !toolsUsed && status == "tools_used" {
+            toolsUsed = true
+            messages := []string{
+                "Working on it… apparently this takes more than two seconds.",
+                "Processing… you'll know when I finally survive this step.",
+                "Processing… I'll update you shortly.",
+                "Working through the steps… hang tight.",
+                "The tools and I are having a deep conversation.",
+            }
+            msgText := messages[rand.Intn(len(messages))]
+            sendEvent("update", msgText)
+        }
+    }
 
-		var lastAssistantMessage string
-		for i := len(updatedMessages) - 1; i >= 0; i-- {
-			if updatedMessages[i].Role == openai.ChatMessageRoleAssistant {
-				lastAssistantMessage = updatedMessages[i].Content
-				break
-			}
-		}
+    updatedMessages, err := agent.RunSessionConversation(c.Request.Context(), chatSession.GetMessages(), statusCallback)
+    if err != nil {
+        log.Printf("Error during conversation: %v", err)
+        sendEvent("error", "An error occurred while processing your request")
+        return
+    }
 
-		if lastAssistantMessage != "" {
-			conn.SendMessage(socket.Message{
-				Response:     lastAssistantMessage,
-				SessionID:    sessionID,
-				IsProcessing: false,
-			})
-		} else {
-			conn.SendMessage(socket.Message{
-				Response:     "I've completed all requested operations. Check the repository for the changes.",
-				SessionID:    sessionID,
-				IsProcessing: false,
-			})
-		}
-	})
+    for _, message := range updatedMessages[len(chatSession.GetMessages()):] {
+        chatSession.AddMessage(message)
+    }
+
+    var lastAssistantMessage string
+    for i := len(updatedMessages) - 1; i >= 0; i-- {
+        if updatedMessages[i].Role == openai.ChatMessageRoleAssistant {
+            lastAssistantMessage = updatedMessages[i].Content
+            break
+        }
+    }
+
+    if lastAssistantMessage != "" {
+        sendEvent("final", lastAssistantMessage)
+    } else {
+        sendEvent("final", "I've completed all requested operations. Check the repository for the changes.")
+    }
+
+    // Ensure the stream closes after a brief pause
+    time.Sleep(500 * time.Millisecond)
 }
