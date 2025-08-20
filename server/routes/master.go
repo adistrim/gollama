@@ -1,17 +1,17 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
+    "github.com/gin-gonic/gin"
 )
 
 func Master() *gin.Engine {
-	router := gin.Default()
-	
-	// system endpoints
-	router.GET("/health", HealthCheck)
+    router := gin.Default()
 
-	// websocket endpoint
-	router.GET("/chat", WebSocketHandler)
+    // system endpoints
+    router.GET("/health", HealthCheck)
 
-	return router
+    // HTTP chat endpoint
+    router.POST("/chat", HTTPChatHandler)
+
+    return router
 }
